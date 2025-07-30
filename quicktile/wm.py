@@ -450,11 +450,9 @@ class WindowManager:
         :param geometry_mask: Which aspects of the requested geometry to apply.
         """
 
-        # 1) Compute current window geometry relative to its monitor
         old_geom = Rectangle(*win.get_geometry()).to_relative(
             self.get_monitor(win)[1])
 
-        # 2) Build any overrides from geom (x, y, width, height)
         new_args = {}
         if geom:
             for attr in ('x', 'y', 'width', 'height'):
@@ -462,10 +460,10 @@ class WindowManager:
                                            attr.upper()):
                     new_args[attr] = getattr(geom, attr)
 
-        # 3) Apply overrides and go back to absolute screen coordinates
+        # Apply changes and return to absolute desktop coordinates
         new_geom = old_geom._replace(**new_args).from_relative(monitor)
 
-        # 4) Compensate for GTK3 client‑side decoration shadows
+        # Account for client-side decoration shadows (CSD)
         try:
             left, right, top, bottom = self._get_frame_extents(win)
         except Exception as err:  # pylint: disable=broad-except
@@ -481,7 +479,7 @@ class WindowManager:
                 height=new_geom.height + top + bottom
             )
 
-        # 5) Clip to usable region if we're just moving (no explicit geom)
+        # Ensure the window is fully within the monitor
         if bool(monitor) and not geom:
             clipped_geom = self.usable_region.clip_to_usable_region(new_geom)
         else:
