@@ -420,30 +420,17 @@ class WindowManager:
         # (Which I can't make a `desktop` window because I sometimes drag it)
 
         return True
-      
-        def _get_frame_extents(self, win: Wnck.Window) -> Tuple[int, int, int, int]:
-        """Read the four 32‑bit ints from _GTK_FRAME_EXTENTS (L, R, T, B)."""
-        try:
-            extents = self.get_property(win, '_GTK_FRAME_EXTENTS',
-                                        Xatom.CARDINAL, [])
-            if extents and len(extents) >= 4:
-                return (int(extents[0]), int(extents[1]),
-                        int(extents[2]), int(extents[3]))
-        except Exception:
-            logging.debug("Error fetching _GTK_FRAME_EXTENTS for %r", win)
-        return (0, 0, 0, 0)
-
-      
-        def reposition(self,  # pylint: disable=too-many-arguments
-            win: Wnck.Window,
-            geom: Optional[Rectangle] = None,
-            monitor: Rectangle = Rectangle(0, 0, 0, 0),
-            keep_maximize: bool = False,
-            geometry_mask: Wnck.WindowMoveResizeMask = (
-                Wnck.WindowMoveResizeMask.X |
-                Wnck.WindowMoveResizeMask.Y |
-                Wnck.WindowMoveResizeMask.WIDTH |
-                Wnck.WindowMoveResizeMask.HEIGHT)
+    
+    def reposition(self,  # pylint: disable=too-many-arguments
+                   win: Wnck.Window,
+                   geom: Optional[Rectangle] = None,
+                   monitor: Rectangle = Rectangle(0, 0, 0, 0),
+                   keep_maximize: bool = False,
+                   geometry_mask: Wnck.WindowMoveResizeMask = (
+                       Wnck.WindowMoveResizeMask.X |
+                       Wnck.WindowMoveResizeMask.Y |
+                       Wnck.WindowMoveResizeMask.WIDTH |
+                       Wnck.WindowMoveResizeMask.HEIGHT)
                    ) -> None:
         """
         Move and resize a window, decorations inclusive, according to the
@@ -460,15 +447,14 @@ class WindowManager:
             interpreted. The whole desktop if unspecified.
         :param keep_maximize: Whether to re-maximize the window if it had to be
             un-maximized to ensure it would move.
-        :param geometry_mask: A set of flags determining which aspects of the
-            requested geometry should actually be applied to the window.
+        :param geometry_mask: Which aspects of the requested geometry to apply.
         """
 
-        # 1) Compute old geometry relative to its monitor
+        # 1) Compute current window geometry relative to its monitor
         old_geom = Rectangle(*win.get_geometry()).to_relative(
             self.get_monitor(win)[1])
 
-        # 2) Build any new x/y/width/height overrides from geom
+        # 2) Build any overrides from geom (x, y, width, height)
         new_args = {}
         if geom:
             for attr in ('x', 'y', 'width', 'height'):
@@ -476,10 +462,10 @@ class WindowManager:
                                            attr.upper()):
                     new_args[attr] = getattr(geom, attr)
 
-        # 3) Apply overrides and convert back to absolute coordinates
+        # 3) Apply overrides and go back to absolute screen coordinates
         new_geom = old_geom._replace(**new_args).from_relative(monitor)
 
-        # 4) Account for GTK3 client-side decoration shadows
+        # 4) Compensate for GTK3 client‑side decoration shadows
         try:
             left, right, top, bottom = self._get_frame_extents(win)
         except Exception as err:  # pylint: disable=broad-except
@@ -495,13 +481,13 @@ class WindowManager:
                 height=new_geom.height + top + bottom
             )
 
-        # 5) Clip to usable region if moving without an explicit geom
+        # 5) Clip to usable region if we're just moving (no explicit geom)
         if bool(monitor) and not geom:
             clipped_geom = self.usable_region.clip_to_usable_region(new_geom)
         else:
             clipped_geom = new_geom
 
-        # 6) Finally, ask Wnck to set the window’s new geometry
+        # 6) Finally set the geometry
         if bool(clipped_geom):
             logging.debug(" Repositioning to %s)\n", clipped_geom)
             with persist_maximization(win, keep_maximize):
@@ -509,3 +495,24 @@ class WindowManager:
                                  geometry_mask, *clipped_geom)
         else:
             logging.debug(" Geometry clipping failed: %r", clipped_geom)
+
+
+    def _get_frame_extents(self, win: Wnck.Window) -> Tuple[int, int, int, int]:
+        """
+        Read the four 32‑bit ints from the _GTK_FRAME_EXTENTS property (L, R, T, B).
+        Returns zeros if the property is missing or malformed.
+        """
+        try:
+            extents = self.get_property(
+                win, '_GTK_FRAME_EXTENTS', Xatom.CARDINAL, [])
+        except Exception as err:
+            logging.debug("Error fetching _GTK_FRAME_EXTENTS for %r: %s",
+                          win, err)
+            return (0, 0, 0, 0)
+
+        if extents and len(extents) >= 4:
+            # Cast each element to int in case python‑xlib returns longs
+            return (int(extents[0]), int(extents[1]),
+                    int(extents[2]), int(extents[3]))
+
+        return (0, 0, 0, 0)
